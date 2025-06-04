@@ -63,14 +63,14 @@ def cleanup_files(file_paths: List[str]) -> None:
 
 
 def create_pdf_from_images(image_paths: List[str], output_path: str, quality: int = 95):
-    """이미지들을 PDF로 변환"""
+    """이미지들을 PDF로 변환 - 개선된 버전"""
     if not image_paths:
         raise ValueError("이미지 파일이 없습니다.")
     
     print(f"   🖼️  이미지 파일 처리 시작: {len(image_paths)}개")
     
     try:
-        images = []
+        processed_images = []
         
         for i, image_path in enumerate(image_paths):
             print(f"   📖 처리 중: {os.path.basename(image_path)}")
@@ -81,7 +81,7 @@ def create_pdf_from_images(image_paths: List[str], output_path: str, quality: in
                 continue
                 
             try:
-                # 이미지 열기
+                # 이미지 열기 및 처리
                 with Image.open(image_path) as img:
                     print(f"   ✅ 이미지 로드: {img.size}, {img.mode}")
                     
@@ -95,7 +95,9 @@ def create_pdf_from_images(image_paths: List[str], output_path: str, quality: in
                         background = Image.new('RGB', img_copy.size, (255, 255, 255))
                         if img_copy.mode == 'P':
                             img_copy = img_copy.convert('RGBA')
-                        if img_copy.mode == 'RGBA':
+                        if img_copy.mode in ('RGBA', 'LA'):
+                            if img_copy.mode == 'LA':
+                                img_copy = img_copy.convert('RGBA')
                             background.paste(img_copy, mask=img_copy.split()[-1])
                         else:
                             background.paste(img_copy)
@@ -111,12 +113,12 @@ def create_pdf_from_images(image_paths: List[str], output_path: str, quality: in
                         buffer = io.BytesIO()
                         img_copy.save(buffer, format='JPEG', quality=quality, optimize=True)
                         buffer.seek(0)
-                        img_copy = Image.open(buffer)
-                        # 버퍼에서 다시 복사하여 메모리 안전성 확보
-                        img_copy = img_copy.copy()
+                        optimized_img = Image.open(buffer)
+                        img_copy = optimized_img.copy()
+                        optimized_img.close()
                         buffer.close()
                     
-                    images.append(img_copy)
+                    processed_images.append(img_copy)
                     print(f"   ✅ 이미지 추가 완료: #{i+1}")
                 
             except Exception as img_error:
@@ -124,10 +126,10 @@ def create_pdf_from_images(image_paths: List[str], output_path: str, quality: in
                 continue
         
         # 변환된 이미지 확인
-        if not images:
+        if not processed_images:
             raise ValueError("처리 가능한 이미지가 없습니다.")
             
-        print(f"   📄 PDF 생성 시작: {len(images)}개 이미지")
+        print(f"   📄 PDF 생성 시작: {len(processed_images)}개 이미지")
         
         # 출력 디렉토리 확인
         output_dir = os.path.dirname(output_path)
@@ -135,25 +137,35 @@ def create_pdf_from_images(image_paths: List[str], output_path: str, quality: in
             os.makedirs(output_dir, exist_ok=True)
         
         # PDF 저장
-        images[0].save(
-            output_path,
-            "PDF",
-            resolution=150.0,
-            save_all=True,
-            append_images=images[1:] if len(images) > 1 else None,
-            quality=quality if quality >= 95 else 95  # PDF 저장시 품질 보정
-        )
+        first_image = processed_images[0]
+        other_images = processed_images[1:] if len(processed_images) > 1 else []
+        
+        save_kwargs = {
+            "format": "PDF",
+            "resolution": 150.0,
+            "quality": max(85, quality),  # PDF용 품질 보정
+            "optimize": True
+        }
+        
+        if other_images:
+            save_kwargs["save_all"] = True
+            save_kwargs["append_images"] = other_images
+        
+        first_image.save(output_path, **save_kwargs)
         
         # 파일 생성 확인
         if not os.path.exists(output_path):
             raise Exception("PDF 파일이 생성되지 않았습니다.")
             
         file_size = os.path.getsize(output_path)
-        print(f"   📄 PDF 생성 완료: {len(images)}개 이미지 → {os.path.basename(output_path)} ({file_size:,} bytes)")
+        print(f"   📄 PDF 생성 완료: {len(processed_images)}개 이미지 → {os.path.basename(output_path)} ({file_size:,} bytes)")
         
         # 이미지 객체들 메모리 해제
-        for img in images:
-            img.close()
+        for img in processed_images:
+            try:
+                img.close()
+            except:
+                pass
         
     except Exception as e:
         print(f"   ❌ PDF 생성 오류: {str(e)}")
@@ -181,16 +193,6 @@ async def convert_images(
 ):
     """
     이미지를 PDF로 변환하는 API
-    
-    Args:
-        files: 업로드된 이미지 파일들
-        convert_type: 변환 타입 ("merged": 합본, "individual": 개별)
-        filename: 출력 파일명 (확장자 제외)
-        quality: 이미지 품질 (1-100)
-    
-    Returns:
-        - merged: PDF 파일 직접 반환
-        - individual: ZIP 파일 다운로드 URL 반환
     """
     if not files:
         raise HTTPException(status_code=400, detail="파일이 업로드되지 않았습니다.")
