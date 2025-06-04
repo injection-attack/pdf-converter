@@ -29,11 +29,16 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 
 function initializeEventListeners() {
-    // 파일 입력 이벤트
+    // 파일 입력 이벤트 - 수정됨
     fileInput.addEventListener('change', handleFileSelect);
     
     // 드래그 앤 드롭 이벤트
-    uploadArea.addEventListener('click', () => fileInput.click());
+    uploadArea.addEventListener('click', () => {
+        // 변환 중이 아닐 때만 파일 선택 가능
+        if (!isConverting) {
+            fileInput.click();
+        }
+    });
     uploadArea.addEventListener('dragover', handleDragOver);
     uploadArea.addEventListener('dragleave', handleDragLeave);
     uploadArea.addEventListener('drop', handleFileDrop);
@@ -57,7 +62,9 @@ function initializeEventListeners() {
 // 드래그 오버 처리
 function handleDragOver(e) {
     e.preventDefault();
-    uploadArea.classList.add('dragover');
+    if (!isConverting) {
+        uploadArea.classList.add('dragover');
+    }
 }
 
 // 드래그 리브 처리
@@ -71,81 +78,95 @@ function handleFileDrop(e) {
     e.preventDefault();
     uploadArea.classList.remove('dragover');
     
+    if (isConverting) return;
+    
     const files = Array.from(e.dataTransfer.files);
     addFiles(files);
 }
 
-// 파일 선택 처리
+// 파일 선택 처리 - 완전히 수정됨
 function handleFileSelect(e) {
     const files = Array.from(e.target.files);
-    console.log('파일 선택 이벤트:', files.length);
+    console.log('파일 선택 이벤트:', files.length, files.map(f => f.name));
+    
     if (files.length > 0) {
         addFiles(files);
     }
-    // 파일 input 초기화를 즉시 하지 않고, 파일 처리 후에 수행
+    
+    // 파일 처리가 완료된 후 input을 리셋하지 않음
+    // 대신 다음 선택을 위해 준비만 함
 }
 
-// 파일 추가
+// 파일 추가 - 수정됨
 function addFiles(files) {
     const imageFiles = files.filter(file => file.type.startsWith('image/'));
     
     if (imageFiles.length === 0) {
         alert('이미지 파일만 업로드할 수 있습니다.');
-        // 파일 input 초기화
-        fileInput.value = '';
         return;
     }
+    
+    console.log('이미지 파일 필터링:', imageFiles.length, '개');
     
     // 중복 파일 제거
     let addedCount = 0;
     imageFiles.forEach(file => {
         const isDuplicate = selectedFiles.some(existing => 
-            existing.name === file.name && existing.size === file.size
+            existing.name === file.name && 
+            existing.size === file.size && 
+            existing.lastModified === file.lastModified
         );
         
         if (!isDuplicate) {
             selectedFiles.push(file);
             addedCount++;
+            console.log('파일 추가:', file.name);
+        } else {
+            console.log('중복 파일 건너뜀:', file.name);
         }
     });
     
-    console.log('파일 추가됨:', selectedFiles.length, '(새로 추가:', addedCount + ')');
+    console.log('총 파일 수:', selectedFiles.length, '(새로 추가:', addedCount + ')');
     
-    // 파일이 실제로 추가된 후에 input 초기화
-    if (addedCount > 0) {
-        // 다음 파일 선택을 위해 input 초기화
-        setTimeout(() => {
-            fileInput.value = '';
-        }, 100);
-    }
-    
+    // UI 업데이트
     updateUI();
+    
+    // 파일 선택 후 input을 다음 선택을 위해 준비
+    // 약간의 지연 후 초기화 (브라우저 이벤트 처리 완료 대기)
+    setTimeout(() => {
+        if (fileInput && !isConverting) {
+            fileInput.value = '';
+            console.log('파일 input 초기화 완료');
+        }
+    }, 200);
 }
 
 // UI 업데이트
 function updateUI() {
     const hasFiles = selectedFiles.length > 0;
     
-    console.log('UI 업데이트:', hasFiles, selectedFiles.length);
+    console.log('UI 업데이트 시작:', hasFiles, selectedFiles.length);
     
-    // 요소들 확인
-    const fileListElement = document.getElementById('fileList');
-    const convertOptionsElement = document.getElementById('convertOptions');
-    const actionsElement = document.getElementById('actions');
-    const resultElement = document.getElementById('result');
-    const progressElement = document.getElementById('progress');
+    // 요소들 확인 및 표시/숨김
+    const elements = {
+        fileList: document.getElementById('fileList'),
+        convertOptions: document.getElementById('convertOptions'),
+        actions: document.getElementById('actions'),
+        result: document.getElementById('result'),
+        progress: document.getElementById('progress')
+    };
     
-    // 파일 리스트 표시/숨김
-    if (fileListElement) {
-        fileListElement.style.display = hasFiles ? 'block' : 'none';
+    // 파일 관련 UI 표시/숨김
+    if (elements.fileList) {
+        elements.fileList.style.display = hasFiles ? 'block' : 'none';
     }
     
-    if (convertOptionsElement) {
-        convertOptionsElement.style.display = hasFiles ? 'block' : 'none';
+    if (elements.convertOptions) {
+        elements.convertOptions.style.display = hasFiles ? 'block' : 'none';
     }
     
-    if (actionsElement) {
-        actionsElement.style.display = hasFiles ? 'block' : 'none';
+    if (elements.actions) {
+        elements.actions.style.display = hasFiles ? 'block' : 'none';
     }
     
     // 파일 목록 업데이트
@@ -156,14 +177,16 @@ function updateUI() {
     }
     
     // 결과 및 진행률 숨김
-    if (resultElement) resultElement.style.display = 'none';
-    if (progressElement) progressElement.style.display = 'none';
+    if (elements.result) elements.result.style.display = 'none';
+    if (elements.progress) elements.progress.style.display = 'none';
     
-    // 파일 input 초기화는 변환 완료 후에만
+    console.log('UI 업데이트 완료');
 }
 
 // 파일 목록 표시
 function displayFiles() {
+    if (!filesContainer) return;
+    
     filesContainer.innerHTML = selectedFiles.map((file, index) => `
         <div class="file-item">
             <div class="file-info">
@@ -179,12 +202,17 @@ function displayFiles() {
 
 // 변환 옵션 업데이트
 function updateConvertOptions() {
+    if (!convertTypeSection) return;
+    
     // 여러 파일일 때만 변환 타입 선택 표시
     convertTypeSection.style.display = selectedFiles.length > 1 ? 'block' : 'none';
     
     // 단일 파일일 때는 자동으로 merged 선택
     if (selectedFiles.length === 1) {
-        document.querySelector('input[name="convertType"][value="merged"]').checked = true;
+        const mergedRadio = document.querySelector('input[name="convertType"][value="merged"]');
+        if (mergedRadio) {
+            mergedRadio.checked = true;
+        }
     }
     
     updateFilenameExtension();
@@ -192,8 +220,7 @@ function updateConvertOptions() {
 
 // 기본 파일명 설정
 function updateDefaultFilename() {
-    if (selectedFiles.length === 0) {
-        outputFilename.value = '';
+    if (!outputFilename || selectedFiles.length === 0) {
         return;
     }
     
@@ -210,7 +237,10 @@ function updateDefaultFilename() {
 
 // 파일명 확장자 업데이트
 function updateFilenameExtension() {
-    const convertType = document.querySelector('input[name="convertType"]:checked')?.value || 'merged';
+    if (!filenameExtension) return;
+    
+    const convertTypeRadio = document.querySelector('input[name="convertType"]:checked');
+    const convertType = convertTypeRadio ? convertTypeRadio.value : 'merged';
     
     if (convertType === 'individual' && selectedFiles.length > 1) {
         filenameExtension.textContent = '.zip';
@@ -221,6 +251,8 @@ function updateFilenameExtension() {
 
 // 파일명 유효성 검사
 function validateFilename() {
+    if (!outputFilename) return;
+    
     const filename = outputFilename.value.trim();
     const invalidChars = /[<>:"/\\|?*]/g;
     
@@ -231,7 +263,7 @@ function validateFilename() {
 
 // 파일 제거
 function removeFile(index) {
-    console.log('파일 제거:', index);
+    console.log('파일 제거:', index, selectedFiles[index]?.name);
     selectedFiles.splice(index, 1);
     updateUI();
 }
@@ -241,8 +273,8 @@ function clearFiles() {
     console.log('파일 전체 제거');
     selectedFiles = [];
     
-    // input 초기화 (안전하게)
-    if (fileInput) {
+    // input 초기화
+    if (fileInput && !isConverting) {
         fileInput.value = '';
     }
     
@@ -251,7 +283,9 @@ function clearFiles() {
 
 // 품질 표시 업데이트
 function updateQualityDisplay() {
-    qualityValue.textContent = qualitySlider.value;
+    if (qualityValue && qualitySlider) {
+        qualityValue.textContent = qualitySlider.value;
+    }
 }
 
 // PDF 변환
@@ -265,7 +299,7 @@ async function convertToPDF() {
     try {
         // UI 상태 변경
         showProgress('변환 준비 중...');
-        convertBtn.disabled = true;
+        if (convertBtn) convertBtn.disabled = true;
         
         // FormData 생성
         const formData = new FormData();
@@ -278,8 +312,8 @@ async function convertToPDF() {
         // 옵션 추가
         const convertTypeElement = document.querySelector('input[name="convertType"]:checked');
         const convertType = convertTypeElement ? convertTypeElement.value : 'merged';
-        const filename = outputFilename.value.trim() || 'converted';
-        const quality = qualitySlider.value;
+        const filename = outputFilename ? outputFilename.value.trim() || 'converted' : 'converted';
+        const quality = qualitySlider ? qualitySlider.value : 95;
         
         formData.append('convert_type', convertType);
         formData.append('filename', filename);
@@ -349,35 +383,40 @@ async function convertToPDF() {
         alert(`변환 중 오류가 발생했습니다: ${error.message}`);
     } finally {
         isConverting = false;
-        convertBtn.disabled = false;
+        if (convertBtn) convertBtn.disabled = false;
     }
 }
 
 // 진행률 표시
 function showProgress(message) {
-    progress.style.display = 'block';
-    result.style.display = 'none';
-    progressText.textContent = message;
-    progressFill.style.width = '0%';
+    if (progress) progress.style.display = 'block';
+    if (result) result.style.display = 'none';
+    if (progressText) progressText.textContent = message;
+    if (progressFill) progressFill.style.width = '0%';
 }
 
 // 진행률 업데이트
 function updateProgress(percent, message) {
-    progressFill.style.width = `${percent}%`;
-    progressText.textContent = message;
+    if (progressFill) progressFill.style.width = `${percent}%`;
+    if (progressText) progressText.textContent = message;
 }
 
 // 진행률 숨김
 function hideProgress() {
-    progress.style.display = 'none';
+    if (progress) progress.style.display = 'none';
 }
 
 // 결과 표시
 function showResult(message) {
     setTimeout(() => {
-        progress.style.display = 'none';
-        result.style.display = 'block';
-        result.querySelector('.result-text').textContent = message;
+        if (progress) progress.style.display = 'none';
+        if (result) {
+            result.style.display = 'block';
+            const resultTextElement = result.querySelector('.result-text');
+            if (resultTextElement) {
+                resultTextElement.textContent = message;
+            }
+        }
     }, 500);
 }
 
@@ -392,6 +431,8 @@ function downloadFile(blob, filename) {
     a.click();
     window.URL.revokeObjectURL(url);
     document.body.removeChild(a);
+    
+    console.log('파일 다운로드 완료:', filename);
 }
 
 // 파일 크기 포맷
