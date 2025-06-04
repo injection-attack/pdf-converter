@@ -1,0 +1,17 @@
+# FastAPI 웹 프레임워크
+fastapi>=0.104.0
+
+# ASGI 서버
+uvicorn[standard]>=0.24.0
+
+# 파일 업로드 처리
+python-multipart>=0.0.6
+
+# 이미지 처리
+Pillow>=10.0.0
+
+# HTML 템플릿 엔진
+Jinja2>=3.1.0
+
+# HTTP 요청 (헬스체크용)
+requests>=2.31.0

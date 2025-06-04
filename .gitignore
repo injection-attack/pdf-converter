@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+
+# Virtual Environment
+.env
+
+# Temporary files (웹서버 생성)
+temp_uploads/
+temp_outputs/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# 생성된 PDF (선택적으로 제외)
+# output/*.pdf

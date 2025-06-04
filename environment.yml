@@ -1,0 +1,11 @@
+name: image_to_pdf
+channels:
+  - conda-forge
+  - anaconda
+  - defaults
+dependencies:
+  - python=3.12
+  - pillow>=10.0.0
+  - conda-forge::fastapi>=0.115.0
+  - conda-forge::uvicorn-standard>=0.32.0
+  - anaconda::python-multipart>=0.0.20

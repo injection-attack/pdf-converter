@@ -1,0 +1,84 @@
+# Git 관련
+.git/
+.gitignore
+.gitattributes
+
+# Python 캐시 및 빌드 파일
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# 가상환경
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# IDE 설정
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS 파일
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# 프로젝트 임시 파일
+temp_uploads/
+temp_outputs/
+images/
+output/
+*.pdf
+*.log
+
+# 테스트 관련
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+coverage.xml
+*.cover
+.hypothesis/
+
+# 문서
+README.md
+CHANGELOG.md
+LICENSE
+*.md
+
+# Conda 파일 (Docker에서는 pip 사용)
+environment.yml
+conda-lock.yml
+
+# 개발용 파일
+docker-compose.yml
+.dockerignore
