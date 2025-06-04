@@ -227,6 +227,12 @@ function removeFile(index) {
 function clearFiles() {
     console.log('파일 전체 제거');
     selectedFiles = [];
+    
+    // input 초기화 (안전하게)
+    if (fileInput && !isProcessing) {
+        fileInput.value = '';
+    }
+    
     updateUI();
 }
 

@@ -67,48 +67,80 @@ def create_pdf_from_images(image_paths: List[str], output_path: str, quality: in
     if not image_paths:
         raise ValueError("이미지 파일이 없습니다.")
     
+    print(f"   🖼️  이미지 파일 처리 시작: {len(image_paths)}개")
+    
     try:
         images = []
         
-        for image_path in image_paths:
-            # 이미지 열기
-            img = Image.open(image_path)
+        for i, image_path in enumerate(image_paths):
+            print(f"   📖 처리 중: {os.path.basename(image_path)}")
             
-            # RGBA를 RGB로 변환 (PDF는 RGBA 지원 안 함)
-            if img.mode in ('RGBA', 'LA', 'P'):
-                # 흰색 배경으로 변환
-                background = Image.new('RGB', img.size, (255, 255, 255))
-                if img.mode == 'P':
-                    img = img.convert('RGBA')
-                background.paste(img, mask=img.split()[-1] if img.mode == 'RGBA' else None)
-                img = background
-            elif img.mode != 'RGB':
-                img = img.convert('RGB')
+            # 파일 존재 확인
+            if not os.path.exists(image_path):
+                print(f"   ❌ 파일 없음: {image_path}")
+                continue
+                
+            try:
+                # 이미지 열기
+                img = Image.open(image_path)
+                print(f"   ✅ 이미지 로드: {img.size}, {img.mode}")
+                
+                # RGBA를 RGB로 변환 (PDF는 RGBA 지원 안 함)
+                if img.mode in ('RGBA', 'LA', 'P'):
+                    print(f"   🔄 모드 변환: {img.mode} → RGB")
+                    # 흰색 배경으로 변환
+                    background = Image.new('RGB', img.size, (255, 255, 255))
+                    if img.mode == 'P':
+                        img = img.convert('RGBA')
+                    if img.mode == 'RGBA':
+                        background.paste(img, mask=img.split()[-1])
+                    else:
+                        background.paste(img)
+                    img = background
+                elif img.mode != 'RGB':
+                    print(f"   🔄 모드 변환: {img.mode} → RGB")
+                    img = img.convert('RGB')
+                
+                # 이미지 품질 최적화
+                if quality < 95:
+                    print(f"   🎯 품질 최적화: {quality}%")
+                    import io
+                    buffer = io.BytesIO()
+                    img.save(buffer, format='JPEG', quality=quality, optimize=True)
+                    buffer.seek(0)
+                    img = Image.open(buffer)
+                
+                images.append(img)
+                print(f"   ✅ 이미지 추가 완료: #{i+1}")
+                
+            except Exception as img_error:
+                print(f"   ❌ 이미지 처리 실패: {os.path.basename(image_path)} - {str(img_error)}")
+                continue
+        
+        # 변환된 이미지 확인
+        if not images:
+            raise ValueError("처리 가능한 이미지가 없습니다.")
             
-            # 이미지 품질 최적화
-            if quality < 95:
-                import io
-                buffer = io.BytesIO()
-                img.save(buffer, format='JPEG', quality=quality, optimize=True)
-                buffer.seek(0)
-                img = Image.open(buffer)
-            
-            images.append(img)
+        print(f"   📄 PDF 생성 시작: {len(images)}개 이미지")
         
         # PDF 저장
-        if images:
-            images[0].save(
-                output_path,
-                "PDF",
-                resolution=150.0,
-                save_all=True,
-                append_images=images[1:] if len(images) > 1 else None,
-                quality=quality
-            )
+        images[0].save(
+            output_path,
+            "PDF",
+            resolution=150.0,
+            save_all=True,
+            append_images=images[1:] if len(images) > 1 else None,
+            quality=quality if quality >= 95 else 95  # PDF 저장시 품질 보정
+        )
             
-        print(f"   📄 PDF 생성: {len(images)}개 이미지 → {os.path.basename(output_path)}")
+        print(f"   📄 PDF 생성 완료: {len(images)}개 이미지 → {os.path.basename(output_path)}")
+        
+        # 이미지 객체들 메모리 해제
+        for img in images:
+            img.close()
         
     except Exception as e:
+        print(f"   ❌ PDF 생성 오류: {str(e)}")
         raise Exception(f"PDF 생성 실패: {str(e)}")
 
 
@@ -157,21 +189,50 @@ async def convert_images(
             safe_filename = "converted"
         
         # 1. 업로드된 파일들 저장
-        for file in files:
+        for i, file in enumerate(files):
+            print(f"   📥 처리 중: {file.filename}")
+            
             # 파일 형식 검증
             if not file.content_type or not file.content_type.startswith('image/'):
+                print(f"   ❌ 지원하지 않는 형식: {file.content_type}")
                 raise HTTPException(status_code=400, detail=f"지원하지 않는 파일 형식: {file.filename}")
             
+            # 파일 내용 읽기
+            content = await file.read()
+            if not content:
+                print(f"   ❌ 빈 파일: {file.filename}")
+                continue
+                
             # 임시 파일 저장
             file_extension = os.path.splitext(file.filename)[1].lower()
+            if not file_extension:
+                file_extension = '.jpg'  # 기본 확장자
+                
             temp_file_path = os.path.join(UPLOAD_DIR, f"{uuid4()}{file_extension}")
             
-            with open(temp_file_path, "wb") as buffer:
-                content = await file.read()
-                buffer.write(content)
-            
-            temp_files.append(temp_file_path)
-            print(f"   💾 저장: {file.filename} -> {os.path.basename(temp_file_path)}")
+            try:
+                with open(temp_file_path, "wb") as buffer:
+                    buffer.write(content)
+                
+                # 파일 크기 확인
+                file_size = os.path.getsize(temp_file_path)
+                if file_size == 0:
+                    print(f"   ❌ 빈 파일 저장됨: {file.filename}")
+                    os.remove(temp_file_path)
+                    continue
+                    
+                temp_files.append(temp_file_path)
+                print(f"   💾 저장 완료: {file.filename} ({file_size:,} bytes)")
+                
+            except Exception as save_error:
+                print(f"   ❌ 저장 실패: {file.filename} - {str(save_error)}")
+                if os.path.exists(temp_file_path):
+                    os.remove(temp_file_path)
+                continue
+        
+        # 저장된 파일 확인
+        if not temp_files:
+            raise HTTPException(status_code=400, detail="처리 가능한 이미지 파일이 없습니다.")
         
         # 2. 변환 타입에 따라 처리
         print(f"   🔄 변환 타입 체크: '{convert_type}', 파일 수: {len(files)}")
