@@ -1,57 +1,115 @@
 #!/usr/bin/env python3
 """
 FastAPI 웹서버 - 이미지를 PDF로 변환
-브라우저에서 드래그 앤 드롭으로 이미지 업로드 후 PDF 변환
+개별 PDF ZIP 다운로드 기능 포함
 """
 
 import os
-import uuid
-import shutil
-from datetime import datetime, timedelta
+import zipfile
+from uuid import uuid4
+from datetime import datetime
 from typing import List
 from pathlib import Path
 
-from fastapi import FastAPI, File, UploadFile, Form, Request, HTTPException
-from fastapi.responses import HTMLResponse, FileResponse
+from fastapi import FastAPI, File, UploadFile, Form, Request, HTTPException, BackgroundTasks
+from fastapi.responses import HTMLResponse, FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from starlette.background import BackgroundTask
 import uvicorn
-
-# 기존 변환 모듈 import
-from converter import ImageToPDFConverter, ImageFinder
+from PIL import Image
 
 print("🚀 FastAPI 이미지-PDF 변환 서버 시작")
 
-# Pillow 버전 확인
-try:
-    from PIL import Image
-    print(f"💡 Pillow 버전: {Image.__version__}")
-except Exception as e:
-    print(f"⚠️  Pillow 로드 실패: {e}")
+# 임시 디렉토리 설정
+UPLOAD_DIR = "temp_uploads"
+OUTPUT_DIR = "temp_outputs"
 
-# 임시 파일 저장소 (자동 생성됨)
-UPLOAD_FOLDER = "temp_uploads"
-OUTPUT_FOLDER = "temp_outputs"
-
-# 폴더 자동 생성
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-os.makedirs(OUTPUT_FOLDER, exist_ok=True)
+# 디렉토리 생성
+os.makedirs(UPLOAD_DIR, exist_ok=True)
+os.makedirs(OUTPUT_DIR, exist_ok=True)
 os.makedirs("static", exist_ok=True)
 os.makedirs("templates", exist_ok=True)
 
-print(f"📁 임시 폴더 생성: {UPLOAD_FOLDER}")
-print(f"📁 임시 폴더 생성: {OUTPUT_FOLDER}")
+print(f"📁 업로드 폴더: {UPLOAD_DIR}")
+print(f"📁 출력 폴더: {OUTPUT_DIR}")
 
 # FastAPI 앱 생성
 app = FastAPI(
     title="🖼️ Image to PDF Converter",
-    description="이미지 파일들을 PDF로 변환하는 웹 서비스",
-    version="1.0.0"
+    description="이미지를 PDF로 변환하는 웹 서비스 (개별/합본 지원)",
+    version="2.0.0"
 )
 
 # 정적 파일과 템플릿 설정
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
+
+
+def cleanup_files(file_paths: List[str]) -> None:
+    """임시 파일들을 정리하는 함수"""
+    if not file_paths:
+        return
+        
+    for file_path in file_paths:
+        try:
+            if os.path.exists(file_path):
+                os.remove(file_path)
+                print(f"   🗑️  삭제: {os.path.basename(file_path)}")
+        except Exception as e:
+            print(f"   ❌ 삭제 실패: {os.path.basename(file_path)} - {str(e)}")
+    
+    print(f"🧹 임시 파일 정리 완료")
+
+
+def create_pdf_from_images(image_paths: List[str], output_path: str, quality: int = 95):
+    """이미지들을 PDF로 변환"""
+    if not image_paths:
+        raise ValueError("이미지 파일이 없습니다.")
+    
+    try:
+        images = []
+        
+        for image_path in image_paths:
+            # 이미지 열기
+            img = Image.open(image_path)
+            
+            # RGBA를 RGB로 변환 (PDF는 RGBA 지원 안 함)
+            if img.mode in ('RGBA', 'LA', 'P'):
+                # 흰색 배경으로 변환
+                background = Image.new('RGB', img.size, (255, 255, 255))
+                if img.mode == 'P':
+                    img = img.convert('RGBA')
+                background.paste(img, mask=img.split()[-1] if img.mode == 'RGBA' else None)
+                img = background
+            elif img.mode != 'RGB':
+                img = img.convert('RGB')
+            
+            # 이미지 품질 최적화
+            if quality < 95:
+                import io
+                buffer = io.BytesIO()
+                img.save(buffer, format='JPEG', quality=quality, optimize=True)
+                buffer.seek(0)
+                img = Image.open(buffer)
+            
+            images.append(img)
+        
+        # PDF 저장
+        if images:
+            images[0].save(
+                output_path,
+                "PDF",
+                resolution=150.0,
+                save_all=True,
+                append_images=images[1:] if len(images) > 1 else None,
+                quality=quality
+            )
+            
+        print(f"   📄 PDF 생성: {len(images)}개 이미지 → {os.path.basename(output_path)}")
+        
+    except Exception as e:
+        raise Exception(f"PDF 생성 실패: {str(e)}")
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -63,98 +121,145 @@ async def main_page(request: Request):
 @app.post("/convert")
 async def convert_images(
     files: List[UploadFile] = File(...),
+    convert_type: str = Form("merged"),  # "merged" 또는 "individual"
+    filename: str = Form("converted"),
     quality: int = Form(95)
 ):
     """
-    이미지 파일들을 PDF로 변환
+    이미지를 PDF로 변환하는 API
     
     Args:
         files: 업로드된 이미지 파일들
+        convert_type: 변환 타입 ("merged": 합본, "individual": 개별)
+        filename: 출력 파일명 (확장자 제외)
         quality: 이미지 품질 (1-100)
     
     Returns:
-        변환된 PDF 파일
+        - merged: PDF 파일 직접 반환
+        - individual: ZIP 파일 다운로드 URL 반환
     """
     if not files:
-        raise HTTPException(status_code=400, detail="업로드된 파일이 없습니다")
+        raise HTTPException(status_code=400, detail="파일이 업로드되지 않았습니다.")
     
-    # 세션 ID 생성 (고유한 작업 식별용)
-    session_id = str(uuid.uuid4())
-    session_upload_dir = os.path.join(UPLOAD_FOLDER, session_id)
-    os.makedirs(session_upload_dir, exist_ok=True)
+    print(f"\n📥 변환 요청:")
+    print(f"   파일 수: {len(files)}")
+    print(f"   변환 타입: {convert_type}")
+    print(f"   파일명: {filename}")
+    print(f"   품질: {quality}")
+    
+    temp_files = []
+    output_paths = []
     
     try:
-        # 업로드된 파일들 저장
-        image_paths = []
-        supported_types = [
-            'image/jpeg', 'image/jpg', 'image/png', 'image/bmp', 
-            'image/tiff', 'image/gif', 'image/webp'
-        ]
+        # 안전한 파일명 생성
+        safe_filename = "".join(c for c in filename if c.isalnum() or c in (' ', '-', '_')).strip()
+        if not safe_filename:
+            safe_filename = "converted"
         
+        # 1. 업로드된 파일들 저장
         for file in files:
-            if file.content_type not in supported_types:
-                continue
-                
-            # 안전한 파일명 생성
-            file_extension = Path(file.filename).suffix.lower()
-            safe_filename = f"{uuid.uuid4()}{file_extension}"
-            file_path = os.path.join(session_upload_dir, safe_filename)
+            # 파일 형식 검증
+            if not file.content_type or not file.content_type.startswith('image/'):
+                raise HTTPException(status_code=400, detail=f"지원하지 않는 파일 형식: {file.filename}")
             
-            # 파일 저장
-            with open(file_path, "wb") as buffer:
+            # 임시 파일 저장
+            file_extension = os.path.splitext(file.filename)[1].lower()
+            temp_file_path = os.path.join(UPLOAD_DIR, f"{uuid4()}{file_extension}")
+            
+            with open(temp_file_path, "wb") as buffer:
                 content = await file.read()
                 buffer.write(content)
             
-            image_paths.append(file_path)
+            temp_files.append(temp_file_path)
+            print(f"   💾 저장: {file.filename} -> {os.path.basename(temp_file_path)}")
         
-        if not image_paths:
-            raise HTTPException(status_code=400, detail="유효한 이미지 파일이 없습니다")
+        # 2. 변환 타입에 따라 처리
+        print(f"   🔄 변환 타입 체크: '{convert_type}', 파일 수: {len(files)}")
         
-        # PDF 변환
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        pdf_filename = f"converted_{timestamp}_{session_id[:8]}.pdf"
-        pdf_path = os.path.join(OUTPUT_FOLDER, pdf_filename)
+        if convert_type == "individual" and len(files) > 1:
+            print(f"   📦 개별 PDF 모드 실행")
+            # 개별 PDF 생성
+            zip_filename = f"{safe_filename}_pdfs.zip"
+            zip_path = os.path.join(OUTPUT_DIR, zip_filename)
+            
+            print(f"📦 개별 PDF → ZIP 생성 시작")
+            
+            with zipfile.ZipFile(zip_path, 'w') as zip_file:
+                for i, temp_file in enumerate(temp_files):
+                    # 개별 PDF 생성
+                    original_name = files[i].filename
+                    pdf_name = f"{os.path.splitext(original_name)[0]}.pdf"
+                    individual_pdf_path = os.path.join(OUTPUT_DIR, f"temp_{uuid4()}.pdf")
+                    
+                    # 단일 이미지로 PDF 생성
+                    create_pdf_from_images([temp_file], individual_pdf_path, quality)
+                    
+                    # ZIP에 추가
+                    zip_file.write(individual_pdf_path, pdf_name)
+                    output_paths.append(individual_pdf_path)
+                    
+                    print(f"   📄 PDF 생성: {pdf_name}")
+            
+            print(f"📦 ZIP 파일 생성 완료: {zip_filename}")
+            
+            # 임시 파일 정리
+            cleanup_files(temp_files + output_paths)
+            
+            # ZIP 파일 다운로드 URL 반환
+            return JSONResponse({
+                "message": "개별 PDF 변환 완료",
+                "file_count": len(files),
+                "download_url": f"/download/{zip_filename}",
+                "filename": zip_filename
+            })
         
-        # 이미지들을 이름순으로 정렬
-        image_paths.sort()
-        
-        converter = ImageToPDFConverter(quality)
-        success = converter.convert_images_to_pdf(image_paths, pdf_path)
-        
-        if not success:
-            raise HTTPException(status_code=500, detail="PDF 변환에 실패했습니다")
-        
-        print(f"✅ PDF 변환 완료: {pdf_filename}")
-        
-        # 변환된 PDF 반환
-        def cleanup():
-            """임시 파일 정리"""
-            try:
-                if os.path.exists(session_upload_dir):
-                    shutil.rmtree(session_upload_dir)
-                if os.path.exists(pdf_path):
-                    os.remove(pdf_path)
-                print(f"🧹 임시 파일 정리 완료: {session_id}")
-            except Exception as e:
-                print(f"⚠️  정리 중 오류: {e}")
-        
-        return FileResponse(
-            path=pdf_path,
-            media_type='application/pdf',
-            filename=f"converted_images_{timestamp}.pdf",
-            background=cleanup  # 다운로드 후 자동 정리
-        )
-        
+        else:
+            print(f"   📄 합본 PDF 모드 실행")
+            # 합본 PDF 생성 (기본값)
+            pdf_filename = f"{safe_filename}.pdf"
+            pdf_path = os.path.join(OUTPUT_DIR, pdf_filename)
+            
+            # 모든 이미지를 하나의 PDF로 변환
+            create_pdf_from_images(temp_files, pdf_path, quality)
+            output_paths.append(pdf_path)
+            
+            print(f"📄 합본 PDF 생성 완료: {pdf_filename}")
+            
+            # PDF 파일 직접 반환
+            def cleanup_task():
+                cleanup_files(temp_files + output_paths)
+                
+            return FileResponse(
+                path=pdf_path,
+                filename=pdf_filename,
+                media_type='application/pdf',
+                background=BackgroundTask(cleanup_task)
+            )
+    
     except Exception as e:
-        # 오류 발생시 임시 파일 정리
-        try:
-            if os.path.exists(session_upload_dir):
-                shutil.rmtree(session_upload_dir)
-        except:
-            pass
-        
-        print(f"❌ 변환 오류: {e}")
-        raise HTTPException(status_code=500, detail=f"변환 중 오류 발생: {str(e)}")
+        print(f"❌ 변환 오류: {str(e)}")
+        # 오류 시 임시 파일 정리
+        cleanup_files(temp_files + output_paths)
+        raise HTTPException(status_code=500, detail=f"PDF 변환 중 오류가 발생했습니다: {str(e)}")
+
+
+@app.get("/download/{filename}")
+async def download_file(filename: str):
+    """ZIP 파일 다운로드 엔드포인트"""
+    file_path = os.path.join(OUTPUT_DIR, filename)
+    
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="파일을 찾을 수 없습니다.")
+    
+    def cleanup_task():
+        cleanup_files([file_path])
+    
+    return FileResponse(
+        path=file_path,
+        filename=filename,
+        media_type='application/zip',
+        background=BackgroundTask(cleanup_task)
+    )
 
 
 @app.get("/health")
@@ -163,75 +268,22 @@ async def health_check():
     return {
         "status": "healthy",
         "timestamp": datetime.now().isoformat(),
-        "upload_folder": UPLOAD_FOLDER,
-        "output_folder": OUTPUT_FOLDER,
-        "folders_exist": {
-            "upload": os.path.exists(UPLOAD_FOLDER),
-            "output": os.path.exists(OUTPUT_FOLDER),
-            "static": os.path.exists("static"),
-            "templates": os.path.exists("templates")
-        }
+        "features": ["merged_pdf", "individual_pdf", "zip_download"],
+        "upload_dir": UPLOAD_DIR,
+        "output_dir": OUTPUT_DIR
     }
 
 
-@app.on_event("startup")
-async def startup_event():
-    """서버 시작시 실행"""
-    print("✅ 서버 시작 완료")
-    print(f"📁 업로드 폴더: {os.path.abspath(UPLOAD_FOLDER)}")
-    print(f"📁 출력 폴더: {os.path.abspath(OUTPUT_FOLDER)}")
-
-
-def cleanup_old_files():
-    """1시간 이상 된 임시 파일들 정리"""
-    try:
-        now = datetime.now()
-        cutoff_time = now - timedelta(hours=1)
-        
-        # 임시 업로드 폴더 정리
-        for item in os.listdir(UPLOAD_FOLDER):
-            item_path = os.path.join(UPLOAD_FOLDER, item)
-            if os.path.isdir(item_path):
-                item_time = datetime.fromtimestamp(os.path.getctime(item_path))
-                if item_time < cutoff_time:
-                    shutil.rmtree(item_path)
-                    print(f"🧹 오래된 업로드 폴더 정리: {item}")
-        
-        # 임시 출력 파일 정리
-        for item in os.listdir(OUTPUT_FOLDER):
-            item_path = os.path.join(OUTPUT_FOLDER, item)
-            if os.path.isfile(item_path):
-                item_time = datetime.fromtimestamp(os.path.getctime(item_path))
-                if item_time < cutoff_time:
-                    os.remove(item_path)
-                    print(f"🧹 오래된 PDF 파일 정리: {item}")
-                    
-    except Exception as e:
-        print(f"⚠️  파일 정리 중 오류: {e}")
-
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    """서버 종료시 정리"""
-    print("🛑 서버 종료 중...")
-    cleanup_old_files()
-    print("👋 서버 종료 완료")
-
-
 if __name__ == "__main__":
-    print("\n🌟 서버 실행 방법:")
-    print("   브라우저에서 http://localhost:8000 접속")
+    print("\n🌟 서버 실행:")
+    print("   메인: http://localhost:8000")
     print("   API 문서: http://localhost:8000/docs")
-    print("   서버 상태: http://localhost:8000/health")
-    print("\n⏹️  종료하려면 Ctrl+C를 누르세요.\n")
+    print("   상태 확인: http://localhost:8000/health")
+    print("\n⚙️  기능:")
+    print("   ✅ 합본 PDF")
+    print("   ✅ 개별 PDF (ZIP)")
+    print("   ✅ 품질 조절")
+    print("   ✅ 파일명 커스터마이징")
     
-    # Render/Railway 등 배포 환경에서는 0.0.0.0으로 바인딩
     port = int(os.getenv("PORT", 8000))
-    
-    # 서버 실행 (항상 0.0.0.0으로 바인딩)
-    uvicorn.run(
-        app, 
-        host="0.0.0.0",  # 모든 인터페이스에서 접근 가능
-        port=port,
-        reload=False
-    )
+    uvicorn.run(app, host="0.0.0.0", port=port, reload=False)

@@ -81,6 +81,7 @@ function handleFileSelect(e) {
     console.log('파일 선택 이벤트:', files.length);
     if (files.length > 0) {
         addFiles(files);
+        // 파일 input 즉시 초기화하지 않음
     }
 }
 
@@ -121,26 +122,17 @@ function updateUI() {
     const resultElement = document.getElementById('result');
     const progressElement = document.getElementById('progress');
     
-    console.log('요소 확인:', {
-        fileList: !!fileListElement,
-        convertOptions: !!convertOptionsElement,
-        actions: !!actionsElement
-    });
-    
     // 파일 리스트 표시/숨김
     if (fileListElement) {
         fileListElement.style.display = hasFiles ? 'block' : 'none';
-        console.log('fileList display:', hasFiles ? 'block' : 'none');
     }
     
     if (convertOptionsElement) {
         convertOptionsElement.style.display = hasFiles ? 'block' : 'none';
-        console.log('convertOptions display:', hasFiles ? 'block' : 'none');
     }
     
     if (actionsElement) {
         actionsElement.style.display = hasFiles ? 'block' : 'none';
-        console.log('actions display:', hasFiles ? 'block' : 'none');
     }
     
     // 파일 목록 업데이트
@@ -154,13 +146,7 @@ function updateUI() {
     if (resultElement) resultElement.style.display = 'none';
     if (progressElement) progressElement.style.display = 'none';
     
-    // 파일 입력 초기화 (이벤트 발생 방지)
-    if (fileInput && hasFiles) {
-        // setTimeout으로 비동기 처리하여 이벤트 루프 충돌 방지
-        setTimeout(() => {
-            fileInput.value = '';
-        }, 100);
-    }
+    // 파일 input 초기화는 변환 완료 후에만
 }
 
 // 파일 목록 표시
