@@ -88,7 +88,7 @@ async def convert_images(
         image_paths = []
         supported_types = [
             'image/jpeg', 'image/jpg', 'image/png', 'image/bmp', 
-            'image/gif', 'image/webp'
+            'image/tiff', 'image/gif', 'image/webp'
         ]
         
         for file in files:
@@ -225,10 +225,13 @@ if __name__ == "__main__":
     print("   서버 상태: http://localhost:8000/health")
     print("\n⏹️  종료하려면 Ctrl+C를 누르세요.\n")
     
-    # 서버 실행
+    # Render/Railway 등 배포 환경에서는 0.0.0.0으로 바인딩
+    port = int(os.getenv("PORT", 8000))
+    
+    # 서버 실행 (항상 0.0.0.0으로 바인딩)
     uvicorn.run(
         app, 
-        host="127.0.0.1", 
-        port=8000,
-        reload=False  # 프로덕션에서는 False
+        host="0.0.0.0",  # 모든 인터페이스에서 접근 가능
+        port=port,
+        reload=False
     )
