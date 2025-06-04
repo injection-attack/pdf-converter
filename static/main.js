@@ -81,8 +81,8 @@ function handleFileSelect(e) {
     console.log('파일 선택 이벤트:', files.length);
     if (files.length > 0) {
         addFiles(files);
-        // 파일 input 즉시 초기화하지 않음
     }
+    // 파일 input 초기화를 즉시 하지 않고, 파일 처리 후에 수행
 }
 
 // 파일 추가
@@ -91,10 +91,13 @@ function addFiles(files) {
     
     if (imageFiles.length === 0) {
         alert('이미지 파일만 업로드할 수 있습니다.');
+        // 파일 input 초기화
+        fileInput.value = '';
         return;
     }
     
     // 중복 파일 제거
+    let addedCount = 0;
     imageFiles.forEach(file => {
         const isDuplicate = selectedFiles.some(existing => 
             existing.name === file.name && existing.size === file.size
@@ -102,10 +105,20 @@ function addFiles(files) {
         
         if (!isDuplicate) {
             selectedFiles.push(file);
+            addedCount++;
         }
     });
     
-    console.log('파일 추가됨:', selectedFiles.length);
+    console.log('파일 추가됨:', selectedFiles.length, '(새로 추가:', addedCount + ')');
+    
+    // 파일이 실제로 추가된 후에 input 초기화
+    if (addedCount > 0) {
+        // 다음 파일 선택을 위해 input 초기화
+        setTimeout(() => {
+            fileInput.value = '';
+        }, 100);
+    }
+    
     updateUI();
 }
 
@@ -229,7 +242,7 @@ function clearFiles() {
     selectedFiles = [];
     
     // input 초기화 (안전하게)
-    if (fileInput && !isProcessing) {
+    if (fileInput) {
         fileInput.value = '';
     }
     

@@ -82,36 +82,42 @@ def create_pdf_from_images(image_paths: List[str], output_path: str, quality: in
                 
             try:
                 # 이미지 열기
-                img = Image.open(image_path)
-                print(f"   ✅ 이미지 로드: {img.size}, {img.mode}")
-                
-                # RGBA를 RGB로 변환 (PDF는 RGBA 지원 안 함)
-                if img.mode in ('RGBA', 'LA', 'P'):
-                    print(f"   🔄 모드 변환: {img.mode} → RGB")
-                    # 흰색 배경으로 변환
-                    background = Image.new('RGB', img.size, (255, 255, 255))
-                    if img.mode == 'P':
-                        img = img.convert('RGBA')
-                    if img.mode == 'RGBA':
-                        background.paste(img, mask=img.split()[-1])
-                    else:
-                        background.paste(img)
-                    img = background
-                elif img.mode != 'RGB':
-                    print(f"   🔄 모드 변환: {img.mode} → RGB")
-                    img = img.convert('RGB')
-                
-                # 이미지 품질 최적화
-                if quality < 95:
-                    print(f"   🎯 품질 최적화: {quality}%")
-                    import io
-                    buffer = io.BytesIO()
-                    img.save(buffer, format='JPEG', quality=quality, optimize=True)
-                    buffer.seek(0)
-                    img = Image.open(buffer)
-                
-                images.append(img)
-                print(f"   ✅ 이미지 추가 완료: #{i+1}")
+                with Image.open(image_path) as img:
+                    print(f"   ✅ 이미지 로드: {img.size}, {img.mode}")
+                    
+                    # 이미지 복사 (원본 보호)
+                    img_copy = img.copy()
+                    
+                    # RGBA를 RGB로 변환 (PDF는 RGBA 지원 안 함)
+                    if img_copy.mode in ('RGBA', 'LA', 'P'):
+                        print(f"   🔄 모드 변환: {img_copy.mode} → RGB")
+                        # 흰색 배경으로 변환
+                        background = Image.new('RGB', img_copy.size, (255, 255, 255))
+                        if img_copy.mode == 'P':
+                            img_copy = img_copy.convert('RGBA')
+                        if img_copy.mode == 'RGBA':
+                            background.paste(img_copy, mask=img_copy.split()[-1])
+                        else:
+                            background.paste(img_copy)
+                        img_copy = background
+                    elif img_copy.mode != 'RGB':
+                        print(f"   🔄 모드 변환: {img_copy.mode} → RGB")
+                        img_copy = img_copy.convert('RGB')
+                    
+                    # 이미지 품질 최적화
+                    if quality < 95:
+                        print(f"   🎯 품질 최적화: {quality}%")
+                        import io
+                        buffer = io.BytesIO()
+                        img_copy.save(buffer, format='JPEG', quality=quality, optimize=True)
+                        buffer.seek(0)
+                        img_copy = Image.open(buffer)
+                        # 버퍼에서 다시 복사하여 메모리 안전성 확보
+                        img_copy = img_copy.copy()
+                        buffer.close()
+                    
+                    images.append(img_copy)
+                    print(f"   ✅ 이미지 추가 완료: #{i+1}")
                 
             except Exception as img_error:
                 print(f"   ❌ 이미지 처리 실패: {os.path.basename(image_path)} - {str(img_error)}")
@@ -123,6 +129,11 @@ def create_pdf_from_images(image_paths: List[str], output_path: str, quality: in
             
         print(f"   📄 PDF 생성 시작: {len(images)}개 이미지")
         
+        # 출력 디렉토리 확인
+        output_dir = os.path.dirname(output_path)
+        if output_dir and not os.path.exists(output_dir):
+            os.makedirs(output_dir, exist_ok=True)
+        
         # PDF 저장
         images[0].save(
             output_path,
@@ -132,8 +143,13 @@ def create_pdf_from_images(image_paths: List[str], output_path: str, quality: in
             append_images=images[1:] if len(images) > 1 else None,
             quality=quality if quality >= 95 else 95  # PDF 저장시 품질 보정
         )
+        
+        # 파일 생성 확인
+        if not os.path.exists(output_path):
+            raise Exception("PDF 파일이 생성되지 않았습니다.")
             
-        print(f"   📄 PDF 생성 완료: {len(images)}개 이미지 → {os.path.basename(output_path)}")
+        file_size = os.path.getsize(output_path)
+        print(f"   📄 PDF 생성 완료: {len(images)}개 이미지 → {os.path.basename(output_path)} ({file_size:,} bytes)")
         
         # 이미지 객체들 메모리 해제
         for img in images:
@@ -141,6 +157,12 @@ def create_pdf_from_images(image_paths: List[str], output_path: str, quality: in
         
     except Exception as e:
         print(f"   ❌ PDF 생성 오류: {str(e)}")
+        # 실패한 PDF 파일 삭제
+        if os.path.exists(output_path):
+            try:
+                os.remove(output_path)
+            except:
+                pass
         raise Exception(f"PDF 생성 실패: {str(e)}")
 
 
@@ -245,34 +267,76 @@ async def convert_images(
             
             print(f"📦 개별 PDF → ZIP 생성 시작")
             
-            with zipfile.ZipFile(zip_path, 'w') as zip_file:
-                for i, temp_file in enumerate(temp_files):
-                    # 개별 PDF 생성
-                    original_name = files[i].filename
-                    pdf_name = f"{os.path.splitext(original_name)[0]}.pdf"
-                    individual_pdf_path = os.path.join(OUTPUT_DIR, f"temp_{uuid4()}.pdf")
-                    
-                    # 단일 이미지로 PDF 생성
-                    create_pdf_from_images([temp_file], individual_pdf_path, quality)
-                    
-                    # ZIP에 추가
-                    zip_file.write(individual_pdf_path, pdf_name)
-                    output_paths.append(individual_pdf_path)
-                    
-                    print(f"   📄 PDF 생성: {pdf_name}")
+            individual_pdfs = []  # 생성된 개별 PDF 파일들 추적
             
-            print(f"📦 ZIP 파일 생성 완료: {zip_filename}")
-            
-            # 임시 파일 정리
-            cleanup_files(temp_files + output_paths)
-            
-            # ZIP 파일 다운로드 URL 반환
-            return JSONResponse({
-                "message": "개별 PDF 변환 완료",
-                "file_count": len(files),
-                "download_url": f"/download/{zip_filename}",
-                "filename": zip_filename
-            })
+            try:
+                with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+                    for i, temp_file in enumerate(temp_files):
+                        try:
+                            # 원본 파일명 가져오기 (안전하게)
+                            if i < len(files):
+                                original_name = files[i].filename
+                            else:
+                                original_name = f"image_{i+1}.jpg"
+                                
+                            # 안전한 파일명 생성
+                            base_name = os.path.splitext(original_name)[0]
+                            safe_base_name = "".join(c for c in base_name if c.isalnum() or c in (' ', '-', '_')).strip()
+                            if not safe_base_name:
+                                safe_base_name = f"image_{i+1}"
+                                
+                            pdf_name = f"{safe_base_name}.pdf"
+                            individual_pdf_path = os.path.join(OUTPUT_DIR, f"temp_{uuid4()}.pdf")
+                            
+                            print(f"   📄 개별 PDF 생성 중: {pdf_name}")
+                            
+                            # 단일 이미지로 PDF 생성
+                            create_pdf_from_images([temp_file], individual_pdf_path, quality)
+                            
+                            # 파일 존재 확인
+                            if not os.path.exists(individual_pdf_path):
+                                print(f"   ❌ PDF 생성 실패: {pdf_name}")
+                                continue
+                                
+                            # ZIP에 추가
+                            zip_file.write(individual_pdf_path, pdf_name)
+                            individual_pdfs.append(individual_pdf_path)
+                            
+                            print(f"   ✅ PDF 추가 완료: {pdf_name}")
+                            
+                        except Exception as pdf_error:
+                            print(f"   ❌ 개별 PDF 생성 오류 ({i+1}): {str(pdf_error)}")
+                            continue
+                
+                # 생성된 PDF가 있는지 확인
+                if not individual_pdfs:
+                    raise Exception("생성된 PDF 파일이 없습니다.")
+                    
+                print(f"📦 ZIP 파일 생성 완료: {zip_filename} ({len(individual_pdfs)}개 PDF)")
+                
+                # 개별 PDF 파일들을 output_paths에 추가
+                output_paths.extend(individual_pdfs)
+                
+                # 임시 파일 정리
+                cleanup_files(temp_files + individual_pdfs)
+                
+                # ZIP 파일 다운로드 URL 반환
+                return JSONResponse({
+                    "message": f"개별 PDF 변환 완료 ({len(individual_pdfs)}개)",
+                    "file_count": len(individual_pdfs),
+                    "download_url": f"/download/{zip_filename}",
+                    "filename": zip_filename
+                })
+                
+            except Exception as zip_error:
+                # ZIP 생성 실패 시 개별 PDF 파일들 정리
+                for pdf_path in individual_pdfs:
+                    try:
+                        if os.path.exists(pdf_path):
+                            os.remove(pdf_path)
+                    except:
+                        pass
+                raise Exception(f"ZIP 파일 생성 실패: {str(zip_error)}")
         
         else:
             print(f"   📄 합본 PDF 모드 실행")
