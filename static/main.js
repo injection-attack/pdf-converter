@@ -101,6 +101,7 @@ function addFiles(files) {
         }
     });
     
+    console.log('파일 추가됨:', selectedFiles.length);
     updateUI();
 }
 
@@ -108,10 +109,36 @@ function addFiles(files) {
 function updateUI() {
     const hasFiles = selectedFiles.length > 0;
     
+    console.log('UI 업데이트:', hasFiles, selectedFiles.length);
+    
+    // 요소들 확인
+    const fileListElement = document.getElementById('fileList');
+    const convertOptionsElement = document.getElementById('convertOptions');
+    const actionsElement = document.getElementById('actions');
+    const resultElement = document.getElementById('result');
+    const progressElement = document.getElementById('progress');
+    
+    console.log('요소 확인:', {
+        fileList: !!fileListElement,
+        convertOptions: !!convertOptionsElement,
+        actions: !!actionsElement
+    });
+    
     // 파일 리스트 표시/숨김
-    fileList.style.display = hasFiles ? 'block' : 'none';
-    convertOptions.style.display = hasFiles ? 'block' : 'none';
-    actions.style.display = hasFiles ? 'block' : 'none';
+    if (fileListElement) {
+        fileListElement.style.display = hasFiles ? 'block' : 'none';
+        console.log('fileList display:', hasFiles ? 'block' : 'none');
+    }
+    
+    if (convertOptionsElement) {
+        convertOptionsElement.style.display = hasFiles ? 'block' : 'none';
+        console.log('convertOptions display:', hasFiles ? 'block' : 'none');
+    }
+    
+    if (actionsElement) {
+        actionsElement.style.display = hasFiles ? 'block' : 'none';
+        console.log('actions display:', hasFiles ? 'block' : 'none');
+    }
     
     // 파일 목록 업데이트
     if (hasFiles) {
@@ -121,11 +148,11 @@ function updateUI() {
     }
     
     // 결과 및 진행률 숨김
-    result.style.display = 'none';
-    progress.style.display = 'none';
+    if (resultElement) resultElement.style.display = 'none';
+    if (progressElement) progressElement.style.display = 'none';
     
     // 파일 입력 초기화
-    fileInput.value = '';
+    if (fileInput) fileInput.value = '';
 }
 
 // 파일 목록 표시
