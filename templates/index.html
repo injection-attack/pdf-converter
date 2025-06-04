@@ -22,21 +22,60 @@
                     <input type="file" id="fileInput" multiple accept="image/*">
                 </div>
 
-                <div class="file-list" id="fileList">
+                <div class="file-list" id="fileList" style="display: none;">
                     <h3>📋 선택된 파일들</h3>
                     <div class="files" id="files"></div>
                 </div>
 
-                <div class="options">
-                    <div class="option-group">
-                        <label for="quality">🎛️ 이미지 품질</label>
-                        <input type="range" id="quality" min="1" max="100" value="95">
-                        <span id="qualityValue">95</span>
+                <!-- 새로 추가된 변환 옵션 섹션 -->
+                <div class="convert-options" id="convertOptions" style="display: none;">
+                    <h3>⚙️ 변환 설정</h3>
+                    
+                    <!-- 변환 타입 선택 (여러 파일일 때만 표시) -->
+                    <div class="option-section" id="convertTypeSection" style="display: none;">
+                        <h4>📋 변환 방식</h4>
+                        <div class="radio-group">
+                            <label class="radio-label">
+                                <input type="radio" name="convertType" value="merged" checked>
+                                <span class="radio-custom"></span>
+                                <div class="radio-content">
+                                    <strong>📚 합본 PDF</strong>
+                                    <small>모든 이미지를 하나의 PDF로 결합</small>
+                                </div>
+                            </label>
+                            <label class="radio-label">
+                                <input type="radio" name="convertType" value="individual">
+                                <span class="radio-custom"></span>
+                                <div class="radio-content">
+                                    <strong>📄 개별 PDF</strong>
+                                    <small>이미지마다 별도의 PDF 생성 (ZIP으로 다운로드)</small>
+                                </div>
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- 파일명 설정 -->
+                    <div class="option-section">
+                        <h4>📝 파일명 설정</h4>
+                        <div class="filename-group">
+                            <input type="text" id="outputFilename" class="filename-input" placeholder="출력 파일명을 입력하세요">
+                            <span class="filename-extension" id="filenameExtension">.pdf</span>
+                        </div>
+                        <small class="filename-hint">확장자는 자동으로 추가됩니다</small>
+                    </div>
+
+                    <!-- 기존 품질 설정 -->
+                    <div class="option-section">
+                        <h4>🎛️ 이미지 품질</h4>
+                        <div class="quality-group">
+                            <input type="range" id="quality" min="1" max="100" value="95">
+                            <span id="qualityValue" class="quality-value">95</span>
+                        </div>
                     </div>
                 </div>
 
-                <div class="actions">
-                    <button id="convertBtn" class="btn-convert" disabled>
+                <div class="actions" id="actions" style="display: none;">
+                    <button id="convertBtn" class="btn-convert">
                         🔄 PDF로 변환
                     </button>
                     <button id="clearBtn" class="btn-clear">

@@ -15,6 +15,9 @@ temp_outputs/
 .vscode/
 .idea/
 
+# test
+docker-test.bat
+
 # OS
 .DS_Store
 Thumbs.db
