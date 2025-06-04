@@ -293,10 +293,13 @@ async function convertToPDF() {
         if (contentType && contentType.includes('application/json')) {
             // ZIP 파일 다운로드 URL 응답
             const result = await response.json();
+            console.log('JSON 응답:', result);
+            
             if (result.download_url) {
+                updateProgress(95, 'ZIP 파일 다운로드 중...');
                 const downloadResponse = await fetch(result.download_url);
                 const blob = await downloadResponse.blob();
-                const finalFilename = `${filename}.zip`;
+                const finalFilename = result.filename || `${filename}.zip`;
                 downloadFile(blob, finalFilename);
             }
         } else {
