@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🖼️ Image to PDF Converter</title>
+    <title>🖼️ 이미지 PDF 변환기</title>
     <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
@@ -19,19 +19,18 @@
                     <div class="upload-icon">📁</div>
                     <div class="upload-text">이미지를 여기에 드래그하거나 클릭하세요</div>
                     <div class="upload-subtext">JPG, PNG, BMP, GIF, WebP 지원</div>
-                    <input type="file" id="fileInput" multiple accept="image/*">
                 </div>
+                <!-- input을 upload-area 밖으로 이동 -->
+                <input type="file" id="fileInput" multiple accept="image/*" style="display: none;">
 
                 <div class="file-list" id="fileList" style="display: none;">
                     <h3>📋 선택된 파일들</h3>
                     <div class="files" id="files"></div>
                 </div>
 
-                <!-- 새로 추가된 변환 옵션 섹션 -->
                 <div class="convert-options" id="convertOptions" style="display: none;">
                     <h3>⚙️ 변환 설정</h3>
                     
-                    <!-- 변환 타입 선택 (여러 파일일 때만 표시) -->
                     <div class="option-section" id="convertTypeSection" style="display: none;">
                         <h4>📋 변환 방식</h4>
                         <div class="radio-group">
@@ -54,7 +53,6 @@
                         </div>
                     </div>
 
-                    <!-- 파일명 설정 -->
                     <div class="option-section">
                         <h4>📝 파일명 설정</h4>
                         <div class="filename-group">
@@ -64,7 +62,6 @@
                         <small class="filename-hint">확장자는 자동으로 추가됩니다</small>
                     </div>
 
-                    <!-- 기존 품질 설정 -->
                     <div class="option-section">
                         <h4>🎛️ 이미지 품질</h4>
                         <div class="quality-group">
@@ -94,9 +91,6 @@
             <div class="result" id="result" style="display: none;">
                 <div class="result-icon">✅</div>
                 <div class="result-text">PDF 변환 완료!</div>
-                <a id="downloadLink" class="btn-download" download>
-                    📥 PDF 다운로드
-                </a>
             </div>
         </main>
     </div>
