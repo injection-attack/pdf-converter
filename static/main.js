@@ -78,7 +78,10 @@ function handleFileDrop(e) {
 // 파일 선택 처리
 function handleFileSelect(e) {
     const files = Array.from(e.target.files);
-    addFiles(files);
+    console.log('파일 선택 이벤트:', files.length);
+    if (files.length > 0) {
+        addFiles(files);
+    }
 }
 
 // 파일 추가
@@ -151,8 +154,13 @@ function updateUI() {
     if (resultElement) resultElement.style.display = 'none';
     if (progressElement) progressElement.style.display = 'none';
     
-    // 파일 입력 초기화
-    if (fileInput) fileInput.value = '';
+    // 파일 입력 초기화 (이벤트 발생 방지)
+    if (fileInput && hasFiles) {
+        // setTimeout으로 비동기 처리하여 이벤트 루프 충돌 방지
+        setTimeout(() => {
+            fileInput.value = '';
+        }, 100);
+    }
 }
 
 // 파일 목록 표시
@@ -224,12 +232,14 @@ function validateFilename() {
 
 // 파일 제거
 function removeFile(index) {
+    console.log('파일 제거:', index);
     selectedFiles.splice(index, 1);
     updateUI();
 }
 
 // 모든 파일 제거
 function clearFiles() {
+    console.log('파일 전체 제거');
     selectedFiles = [];
     updateUI();
 }
@@ -261,13 +271,29 @@ async function convertToPDF() {
         });
         
         // 옵션 추가
-        const convertType = document.querySelector('input[name="convertType"]:checked')?.value || 'merged';
+        const convertTypeElement = document.querySelector('input[name="convertType"]:checked');
+        const convertType = convertTypeElement ? convertTypeElement.value : 'merged';
         const filename = outputFilename.value.trim() || 'converted';
         const quality = qualitySlider.value;
         
         formData.append('convert_type', convertType);
         formData.append('filename', filename);
         formData.append('quality', quality);
+        
+        console.log('전송 데이터:');
+        console.log('- 파일 수:', selectedFiles.length);
+        console.log('- 변환 타입:', convertType);
+        console.log('- 파일명:', filename);
+        console.log('- 품질:', quality);
+        
+        // FormData 내용 확인
+        for (let [key, value] of formData.entries()) {
+            if (key === 'files') {
+                console.log(`- ${key}:`, value.name);
+            } else {
+                console.log(`- ${key}:`, value);
+            }
+        }
         
         // 진행률 업데이트
         updateProgress(30, '서버로 업로드 중...');
